@@ -180,12 +180,14 @@ def get_internal_links(page, base_url):
         """
     )
 
+    print(f"[debug] Raw anchor hrefs before filtering: {anchors}")
+
     links = []
     for href in anchors:
         if not href:
             continue
         full = urljoin(base_url, href)
-        if full.startswith("https://steemstreamer.pages.dev"):
+        if full.startswith(("http://", "https://")):
             links.append(full)
 
     return unique_links(links)
