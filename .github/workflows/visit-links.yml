@@ -25,6 +25,6 @@ jobs:
 
       - name: Visit site and click links
         env:
-          SITE_URL: https://steemstreamer.pages.dev
+          SITE_URL: https://cp-videos.pages.dev
         run: |
           python visit_links.py
