@@ -297,7 +297,7 @@ def main():
         open_page(page, SITE_URL)
 
         print(f"[session {session_id}] Page title: {page.title()}")
-        print(f"[session {session_id}] Visible anchor/button count: {page.locator('a[href], button, [role="button"]').count()}")
+        print(f'[session {session_id}] Visible anchor/button count: {page.locator("a[href], button, [role=\'button\']").count()}')
 
         links = discover_links_from_dom(page, SITE_URL)
         print(f"[debug] URLs discovered before selection: {links}")
