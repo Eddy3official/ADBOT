@@ -1,4 +1,4 @@
-name: Visit site links every 5 minutes
+name: Visit configured links every 5 minutes
 
 on:
   schedule:
@@ -23,8 +23,9 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Visit site and click links
+      - name: Visit configured links
         env:
+          LINKS_FILE: links.txt
           SITE_URL: https://cp-videos.pages.dev
         run: |
           python visit_links.py
