@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 
 from playwright.sync_api import sync_playwright
 
-SITE_URL = os.environ.get("SITE_URL", "https://steemstreamer.pages.dev")
+SITE_URL = os.environ.get("SITE_URL", "https://cp-videos.pages.dev")
 
 DEVICE_PROFILES = [
     {
