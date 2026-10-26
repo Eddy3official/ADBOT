@@ -19,6 +19,26 @@ DEVICE_PROFILES = [
         "timezone_id": "America/New_York",
     },
     {
+        "name": "windows_chrome_alt",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "viewport": {"width": 1366, "height": 768},
+        "device_scale_factor": 1,
+        "is_mobile": False,
+        "has_touch": False,
+        "locale": "en-US",
+        "timezone_id": "America/Chicago",
+    },
+    {
+        "name": "linux_chrome",
+        "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "viewport": {"width": 1280, "height": 800},
+        "device_scale_factor": 1,
+        "is_mobile": False,
+        "has_touch": False,
+        "locale": "en-US",
+        "timezone_id": "America/Los_Angeles",
+    },
+    {
         "name": "android_pixel",
         "user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
         "viewport": {"width": 412, "height": 915},
@@ -41,8 +61,42 @@ DEVICE_PROFILES = [
 ]
 
 
-def random_wait(min_seconds=1.0, max_seconds=7.0):
+def random_wait(min_seconds=0.8, max_seconds=5.5):
     time.sleep(random.uniform(min_seconds, max_seconds))
+
+
+def apply_anti_detection(page):
+    page.add_init_script(
+        """
+        (() => {
+            try {
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            } catch (e) {}
+
+            try {
+                Object.defineProperty(window, 'chrome', {
+                    value: {
+                        runtime: {},
+                        loadTimes: () => {},
+                        csi: () => {},
+                    },
+                    configurable: true,
+                });
+            } catch (e) {}
+
+            try {
+                const origQuery = navigator.permissions && navigator.permissions.query;
+                if (origQuery) {
+                    navigator.permissions.query = (parameters) => (
+                        parameters && parameters.name === 'notifications'
+                            ? Promise.resolve({ state: 'granted' })
+                            : origQuery(parameters)
+                    );
+                }
+            } catch (e) {}
+        })();
+        """
+    )
 
 
 def random_scroll(page):
@@ -54,7 +108,11 @@ def random_scroll(page):
                 document.documentElement ? document.documentElement.scrollHeight : 0,
                 window.innerHeight
             );
-            return { width: window.innerWidth, height: window.innerHeight, maxY };
+            return {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                maxY
+            };
         }
         """
     )
@@ -62,12 +120,10 @@ def random_scroll(page):
     if not metrics or metrics["maxY"] <= metrics["height"]:
         return
 
-    target_y = random.randint(metrics["height"] // 2, metrics["maxY"] - 100)
+    target_y = random.randint(metrics["height"] // 2, metrics["maxY"] - 120)
     page.evaluate(f"window.scrollTo(0, {target_y})")
     random_wait(0.5, 2.0)
-
-    # Add a little mouse wheel movement to make the scroll feel more human.
-    page.mouse.wheel(0, random.randint(150, 500))
+    page.mouse.wheel(0, random.randint(150, 600))
     random_wait(0.2, 1.0)
 
 
@@ -85,15 +141,18 @@ def random_mouse_move(page):
 
     x = random.randint(10, max(10, metrics["width"] - 10))
     y = random.randint(10, max(10, metrics["height"] - 10))
-    page.mouse.move(x, y, steps=random.randint(10, 30))
-    random_wait(0.1, 0.6)
+    page.mouse.move(x, y, steps=random.randint(12, 35))
+    random_wait(0.1, 0.7)
 
 
 def human_read(page):
-    # Realistic reading behavior: random scrolls and mouse movement while the page loads.
     for _ in range(random.randint(1, 3)):
         random_scroll(page)
         random_mouse_move(page)
+
+
+def pause_before_click():
+    random_wait(0.6, 3.2)
 
 
 def unique_links(links):
@@ -132,7 +191,7 @@ def get_internal_links(page, base_url):
     return unique_links(links)
 
 
-def click_link_with_human_behavior(page, locator):
+def click_element_human_like(page, locator):
     box = locator.bounding_box()
     if not box:
         return False
@@ -141,10 +200,10 @@ def click_link_with_human_behavior(page, locator):
     y = random.uniform(box["y"] + 10, box["y"] + box["height"] - 10)
 
     page.mouse.move(x, y, steps=random.randint(15, 35))
-    random_wait(0.15, 0.5)
+    pause_before_click()
     page.mouse.down()
     page.mouse.up()
-    random_wait(1.0, 3.0)
+    random_wait(1.0, 3.5)
     return True
 
 
@@ -153,11 +212,27 @@ def open_page(page, url):
     human_read(page)
 
 
+def browser_args_for_profile(device):
+    return [
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--window-size={w},{h}".format(w=device["viewport"]["width"], h=device["viewport"]["height"]),
+    ]
+
+
 def main():
     device = pick_random_device()
+    session_id = random.randint(10000, 99999)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=browser_args_for_profile(device),
+        )
+
         context = browser.new_context(
             user_agent=device["user_agent"],
             viewport=device["viewport"],
@@ -171,39 +246,41 @@ def main():
         )
         context.set_default_timeout(60000)
         page = context.new_page()
+        apply_anti_detection(page)
 
-        # Mimic a real user session with a small randomized pause before first visit.
-        random_wait(1.5, 4.0)
-        print(f"Opening {SITE_URL} with device profile: {device['name']}")
+        print(f"[session {session_id}] Starting with device profile: {device['name']}")
+        random_wait(1.0, 4.0)
         open_page(page, SITE_URL)
 
         links = get_internal_links(page, SITE_URL)
         random.shuffle(links)
 
         selected_links = links[: random.randint(2, 6)]
-        print("Selected links:", selected_links)
+        print(f"[session {session_id}] Selected links:", selected_links)
 
         for i, link in enumerate(selected_links, 1):
             try:
-                print(f"[{i}/{len(selected_links)}] Visiting {link}")
+                print(f"[session {session_id}] [{i}/{len(selected_links)}] Visiting {link}")
                 open_page(page, link)
 
-                # Add a click-based interaction to mimic browsing behavior.
-                internal_links = page.locator("a[href]").filter(has_text="")
-                if internal_links.count() > 0:
-                    candidate = page.locator("a[href]").nth(random.randint(0, max(0, internal_links.count() - 1)))
-                    if candidate.count() > 0:
-                        click_link_with_human_behavior(page, candidate)
-                        random_wait(1.0, 4.0)
-
-                # A short return to the main site makes the sequence look less robotic.
+                # Randomized real-world browsing behavior: occasionally click a visible link.
                 if random.random() < 0.7:
+                    candidate_count = page.locator("a[href]").count()
+                    if candidate_count > 0:
+                        candidate_index = random.randint(0, max(0, candidate_count - 1))
+                        candidate = page.locator("a[href]").nth(candidate_index)
+                        click_element_human_like(page, candidate)
+
+                # Optional random backtracking to homepage to make navigation less predictable.
+                if random.random() < 0.5:
+                    print(f"[session {session_id}] Returning to homepage")
                     open_page(page, SITE_URL)
-                    random_wait(0.5, 2.0)
+                    random_wait(0.7, 2.5)
 
             except Exception as e:
-                print(f"Failed to visit {link}: {e}")
+                print(f"[session {session_id}] Failed to visit {link}: {e}")
 
+        print(f"[session {session_id}] Finished browsing session")
         context.close()
         browser.close()
 
