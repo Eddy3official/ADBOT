@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import time
 from urllib.parse import urljoin
 
@@ -69,21 +70,13 @@ def apply_anti_detection(page):
     page.add_init_script(
         """
         (() => {
-            try {
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            } catch (e) {}
-
+            try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
             try {
                 Object.defineProperty(window, 'chrome', {
-                    value: {
-                        runtime: {},
-                        loadTimes: () => {},
-                        csi: () => {},
-                    },
+                    value: { runtime: {}, loadTimes: () => {}, csi: () => {} },
                     configurable: true,
                 });
             } catch (e) {}
-
             try {
                 const origQuery = navigator.permissions && navigator.permissions.query;
                 if (origQuery) {
@@ -108,11 +101,7 @@ def random_scroll(page):
                 document.documentElement ? document.documentElement.scrollHeight : 0,
                 window.innerHeight
             );
-            return {
-                width: window.innerWidth,
-                height: window.innerHeight,
-                maxY
-            };
+            return { width: window.innerWidth, height: window.innerHeight, maxY };
         }
         """
     )
@@ -130,10 +119,7 @@ def random_scroll(page):
 def random_mouse_move(page):
     metrics = page.evaluate(
         """
-        () => ({
-            width: window.innerWidth,
-            height: window.innerHeight
-        })
+        () => ({ width: window.innerWidth, height: window.innerHeight })
         """
     )
     if not metrics:
@@ -173,20 +159,72 @@ def pick_random_device():
     return random.choice(DEVICE_PROFILES)
 
 
-def get_internal_links(page, base_url):
-    anchors = page.locator("a[href]").evaluate_all(
+def wait_for_js_to_load(page, timeout_seconds=20):
+    deadline = time.time() + timeout_seconds
+    last_count = -1
+
+    while time.time() < deadline:
+        try:
+            ready_state = page.evaluate("document.readyState")
+            count = page.locator("a[href], button, [role='button']").count()
+            if ready_state == "complete" and (count > 0 or last_count == count):
+                break
+            last_count = count
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    # final small wait for hydration or rendering to settle
+    random_wait(1.0, 2.5)
+
+
+def discover_links_from_dom(page, base_url):
+    selectors = [
+        "a[href]",
+        "area[href]",
+        "link[href]",
+        "button[data-href]",
+        "[data-href]",
+        "[href]",
+        "[role='button']",
+        "button",
+    ]
+
+    candidates = []
+    for selector in selectors:
+        try:
+            items = page.locator(selector).evaluate_all(
+                """
+                (els) => els.map((el) => {
+                    const href = el.getAttribute('href') || el.getAttribute('data-href') || '';
+                    const value = href || el.innerText || '';
+                    return value.trim();
+                })
+                """
+            )
+            candidates.extend(items)
+        except Exception:
+            pass
+
+    script_texts = page.locator("script").evaluate_all(
         """
-        (els) => els.map(el => el.getAttribute('href'))
+        (els) => els.map(el => (el.textContent || el.getAttribute('src') || '')).join('\n')
         """
     )
-
-    print(f"[debug] Raw anchor hrefs before filtering: {anchors}")
+    for script_chunk in script_texts:
+        if script_chunk:
+            candidates.extend(re.findall(r'https?://[^\s"\'<>]+|/[^\s"\'<>]+', script_chunk))
 
     links = []
-    for href in anchors:
-        if not href:
+    for candidate in candidates:
+        if not candidate:
             continue
-        full = urljoin(base_url, href)
+        candidate = candidate.strip()
+        if candidate.startswith(("javascript:", "mailto:", "tel:", "#")):
+            continue
+        if candidate.startswith("//"):
+            candidate = "https:" + candidate
+        full = urljoin(base_url, candidate)
         if full.startswith(("http://", "https://")):
             links.append(full)
 
@@ -194,23 +232,27 @@ def get_internal_links(page, base_url):
 
 
 def click_element_human_like(page, locator):
-    box = locator.bounding_box()
-    if not box:
+    try:
+        box = locator.bounding_box()
+        if not box:
+            return False
+
+        x = random.uniform(box["x"] + 10, box["x"] + box["width"] - 10)
+        y = random.uniform(box["y"] + 10, box["y"] + box["height"] - 10)
+
+        page.mouse.move(x, y, steps=random.randint(15, 35))
+        pause_before_click()
+        page.mouse.down()
+        page.mouse.up()
+        random_wait(1.0, 3.5)
+        return True
+    except Exception:
         return False
-
-    x = random.uniform(box["x"] + 10, box["x"] + box["width"] - 10)
-    y = random.uniform(box["y"] + 10, box["y"] + box["height"] - 10)
-
-    page.mouse.move(x, y, steps=random.randint(15, 35))
-    pause_before_click()
-    page.mouse.down()
-    page.mouse.up()
-    random_wait(1.0, 3.5)
-    return True
 
 
 def open_page(page, url):
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    wait_for_js_to_load(page, timeout_seconds=20)
     human_read(page)
 
 
@@ -254,10 +296,14 @@ def main():
         random_wait(1.0, 4.0)
         open_page(page, SITE_URL)
 
-        links = get_internal_links(page, SITE_URL)
+        print(f"[session {session_id}] Page title: {page.title()}")
+        print(f"[session {session_id}] Visible anchor/button count: {page.locator('a[href], button, [role="button"]').count()}")
+
+        links = discover_links_from_dom(page, SITE_URL)
+        print(f"[debug] URLs discovered before selection: {links}")
         random.shuffle(links)
 
-        selected_links = links[: random.randint(2, 6)]
+        selected_links = links[: random.randint(2, 6)] if links else []
         print(f"[session {session_id}] Selected links:", selected_links)
 
         for i, link in enumerate(selected_links, 1):
@@ -265,15 +311,14 @@ def main():
                 print(f"[session {session_id}] [{i}/{len(selected_links)}] Visiting {link}")
                 open_page(page, link)
 
-                # Randomized real-world browsing behavior: occasionally click a visible link.
                 if random.random() < 0.7:
-                    candidate_count = page.locator("a[href]").count()
+                    candidates = page.locator("a[href], button, [role='button']")
+                    candidate_count = candidates.count()
                     if candidate_count > 0:
                         candidate_index = random.randint(0, max(0, candidate_count - 1))
-                        candidate = page.locator("a[href]").nth(candidate_index)
+                        candidate = candidates.nth(candidate_index)
                         click_element_human_like(page, candidate)
 
-                # Optional random backtracking to homepage to make navigation less predictable.
                 if random.random() < 0.5:
                     print(f"[session {session_id}] Returning to homepage")
                     open_page(page, SITE_URL)
