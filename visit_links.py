@@ -1,29 +1,14 @@
 import os
 import random
+import re
 import time
+from pathlib import Path
 from urllib.parse import urljoin
 
 from playwright.sync_api import sync_playwright
 
 SITE_URL = os.environ.get("SITE_URL", "https://cp-videos.pages.dev")
-
-# Hard-coded target URLs. Replace the placeholders with the real pages you want the bot to visit.
-# These are randomly selected and opened directly instead of scraping the main site for links.
-TARGET_URL_1 = os.environ.get("TARGET_URL_1", "https://example.com/placeholder-url-1")
-TARGET_URL_2 = os.environ.get("TARGET_URL_2", "https://example.com/placeholder-url-2")
-TARGET_URL_3 = os.environ.get("TARGET_URL_3", "https://example.com/placeholder-url-3")
-TARGET_URL_4 = os.environ.get("TARGET_URL_4", "https://example.com/placeholder-url-4")
-TARGET_URL_5 = os.environ.get("TARGET_URL_5", "https://example.com/placeholder-url-5")
-
-HARD_CODED_LINKS = [
-    url for url in [
-        TARGET_URL_1,
-        TARGET_URL_2,
-        TARGET_URL_3,
-        TARGET_URL_4,
-        TARGET_URL_5,
-    ] if url and url.strip()
-]
+LINKS_FILE = Path(os.environ.get("LINKS_FILE", "links.txt"))
 
 DEVICE_PROFILES = [
     {
@@ -130,6 +115,29 @@ def pick_random_device():
     return random.choice(DEVICE_PROFILES)
 
 
+def load_target_links(file_path=LINKS_FILE):
+    if not file_path.exists():
+        return []
+
+    text = file_path.read_text(encoding="utf-8", errors="ignore")
+    raw_links = re.findall(r"https?://[^\s'\"<>]+", text)
+    unique = []
+    seen = set()
+    for link in raw_links:
+        if link not in seen:
+            seen.add(link)
+            unique.append(link)
+    return unique
+
+
+def select_target_links():
+    links = load_target_links()
+    if links:
+        count = min(len(links), random.randint(2, min(5, len(links))))
+        return random.sample(links, k=count)
+    return [SITE_URL]
+
+
 def get_internal_links(page, base_url):
     anchors = page.locator("a[href]").evaluate_all(
         """
@@ -169,14 +177,6 @@ def open_page(page, url):
     human_read(page)
 
 
-def select_target_links():
-    if not HARD_CODED_LINKS:
-        return [SITE_URL]
-
-    count = min(len(HARD_CODED_LINKS), random.randint(2, min(5, len(HARD_CODED_LINKS))))
-    return random.sample(HARD_CODED_LINKS, k=count)
-
-
 def maybe_click_random_link(page):
     links = page.locator("a[href]")
     count = links.count()
@@ -211,7 +211,7 @@ def main():
 
         random_wait(1.5, 4.0)
         target_links = select_target_links()
-        print("Selected hard-coded links:", target_links)
+        print("Selected links:", target_links)
 
         for i, link in enumerate(target_links, 1):
             try:
