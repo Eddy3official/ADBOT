@@ -7,6 +7,24 @@ from playwright.sync_api import sync_playwright
 
 SITE_URL = os.environ.get("SITE_URL", "https://cp-videos.pages.dev")
 
+# Hard-coded target URLs. Replace the placeholders with the real pages you want the bot to visit.
+# These are randomly selected and opened directly instead of scraping the main site for links.
+TARGET_URL_1 = os.environ.get("TARGET_URL_1", "https://example.com/placeholder-url-1")
+TARGET_URL_2 = os.environ.get("TARGET_URL_2", "https://example.com/placeholder-url-2")
+TARGET_URL_3 = os.environ.get("TARGET_URL_3", "https://example.com/placeholder-url-3")
+TARGET_URL_4 = os.environ.get("TARGET_URL_4", "https://example.com/placeholder-url-4")
+TARGET_URL_5 = os.environ.get("TARGET_URL_5", "https://example.com/placeholder-url-5")
+
+HARD_CODED_LINKS = [
+    url for url in [
+        TARGET_URL_1,
+        TARGET_URL_2,
+        TARGET_URL_3,
+        TARGET_URL_4,
+        TARGET_URL_5,
+    ] if url and url.strip()
+]
+
 DEVICE_PROFILES = [
     {
         "name": "windows_chrome",
@@ -66,7 +84,6 @@ def random_scroll(page):
     page.evaluate(f"window.scrollTo(0, {target_y})")
     random_wait(0.5, 2.0)
 
-    # Add a little mouse wheel movement to make the scroll feel more human.
     page.mouse.wheel(0, random.randint(150, 500))
     random_wait(0.2, 1.0)
 
@@ -90,7 +107,6 @@ def random_mouse_move(page):
 
 
 def human_read(page):
-    # Realistic reading behavior: random scrolls and mouse movement while the page loads.
     for _ in range(random.randint(1, 3)):
         random_scroll(page)
         random_mouse_move(page)
@@ -153,6 +169,27 @@ def open_page(page, url):
     human_read(page)
 
 
+def select_target_links():
+    if not HARD_CODED_LINKS:
+        return [SITE_URL]
+
+    count = min(len(HARD_CODED_LINKS), random.randint(2, min(5, len(HARD_CODED_LINKS))))
+    return random.sample(HARD_CODED_LINKS, k=count)
+
+
+def maybe_click_random_link(page):
+    links = page.locator("a[href]")
+    count = links.count()
+    if count == 0:
+        return
+
+    index = random.randint(0, max(0, count - 1))
+    candidate = links.nth(index)
+    if candidate.count() > 0:
+        click_link_with_human_behavior(page, candidate)
+        random_wait(1.0, 4.0)
+
+
 def main():
     device = pick_random_device()
 
@@ -172,37 +209,23 @@ def main():
         context.set_default_timeout(60000)
         page = context.new_page()
 
-        # Mimic a real user session with a small randomized pause before first visit.
         random_wait(1.5, 4.0)
-        print(f"Opening {SITE_URL} with device profile: {device['name']}")
-        open_page(page, SITE_URL)
+        target_links = select_target_links()
+        print("Selected hard-coded links:", target_links)
 
-        links = get_internal_links(page, SITE_URL)
-        random.shuffle(links)
-
-        selected_links = links[: random.randint(2, 6)]
-        print("Selected links:", selected_links)
-
-        for i, link in enumerate(selected_links, 1):
+        for i, link in enumerate(target_links, 1):
             try:
-                print(f"[{i}/{len(selected_links)}] Visiting {link}")
+                print(f"[{i}/{len(target_links)}] Opening {link}")
                 open_page(page, link)
 
-                # Add a click-based interaction to mimic browsing behavior.
-                internal_links = page.locator("a[href]").filter(has_text="")
-                if internal_links.count() > 0:
-                    candidate = page.locator("a[href]").nth(random.randint(0, max(0, internal_links.count() - 1)))
-                    if candidate.count() > 0:
-                        click_link_with_human_behavior(page, candidate)
-                        random_wait(1.0, 4.0)
+                if random.random() < 0.8:
+                    maybe_click_random_link(page)
 
-                # A short return to the main site makes the sequence look less robotic.
-                if random.random() < 0.7:
-                    open_page(page, SITE_URL)
-                    random_wait(0.5, 2.0)
+                if random.random() < 0.6:
+                    open_page(page, link)
 
             except Exception as e:
-                print(f"Failed to visit {link}: {e}")
+                print(f"Failed to open {link}: {e}")
 
         context.close()
         browser.close()
