@@ -1,4 +1,4 @@
-name: Visit configured links every 5 minutes
+name: Run script bundles every 5 minutes
 
 on:
   schedule:
@@ -23,9 +23,12 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Visit configured links
+      - name: Run script bundles manually
         env:
-          LINKS_FILE: links.txt
-          SITE_URL: https://cp-videos.pages.dev
+          MAX_SCRIPTS: "5"
+          ENABLE_SCROLL: "true"
+          ENABLE_MOUSE: "true"
+          ENABLE_REALISTIC_PAGE: "true"
+          BROWSER_PROFILE: "windows_chrome"
         run: |
           python visit_links.py
