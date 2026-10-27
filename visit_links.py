@@ -9,16 +9,16 @@ CHAT_ID = "@your_channel_username"
 
 # Define your post content
 message_text = (
-    "<b>🚀 New Update Available!</b>\n\n"
-    "We have just pushed a fresh update to our platform. "
-    "Check out the latest features and changes right now."
+    "<b>New Content!</b>\n\n"
+    "We have just pushed fresh content to our platform. "
+    "Check it out."
 )
 
 # Define the stylish inline button layout
 keyboard = {
     "inline_keyboard": [
         [
-            {"text": "🌐 Visit Website", "url": "https://yourwebsite.com"}
+            {"text": "🌐 Visit Website", "url": "https://steemstreamer.pages.dev"}
         ]
     ]
 }
