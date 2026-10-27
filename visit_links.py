@@ -8,7 +8,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "-1004415135551"
 SITE_URL = "https://steemstreamer.pages.dev"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "bot_posts.json")
-MESSAGE_TTL_SECONDS = 600  # 10 minutes
+MESSAGE_TTL_SECONDS = 60  # 10 minutes
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
