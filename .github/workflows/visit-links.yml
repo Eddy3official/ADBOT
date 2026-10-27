@@ -6,29 +6,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  visit:
+  run-bot-script:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
-      - name: Install dependencies
-        run: |
-          pip install playwright
-          python -m playwright install --with-deps chromium
-
-      - name: Run script bundles manually
+      - name: Execute Python Script
         env:
-          MAX_SCRIPTS: "5"
-          ENABLE_SCROLL: "true"
-          ENABLE_MOUSE: "true"
-          ENABLE_REALISTIC_PAGE: "true"
-          BROWSER_PROFILE: "windows_chrome"
-        run: |
-          python visit_links.py
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python visit_links.py
