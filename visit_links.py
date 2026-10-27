@@ -5,7 +5,7 @@ import urllib.request
 # Fetch credentials from GitHub environment variables
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 # For channels use '@channelusername', for groups use the negative chat ID (e.g., -100xxxxxx)
-CHAT_ID = "@your_channel_username" 
+CHAT_ID = "-1004415135551" 
 
 # Define your post content
 message_text = (
