@@ -2,19 +2,18 @@ import os
 import json
 import urllib.request
 
-# Fetch credentials from GitHub environment variables
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-# For channels use '@channelusername', for groups use the negative chat ID (e.g., -100xxxxxx)
-CHAT_ID = "-1004415135551" 
+CHAT_ID = "-1004415135551"
 
-# Define your post content
+if not BOT_TOKEN:
+    raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
+
 message_text = (
     "<b>New Content!</b>\n\n"
     "We have just pushed fresh content to our platform. "
     "Check it out."
 )
 
-# Define the stylish inline button layout
 keyboard = {
     "inline_keyboard": [
         [
@@ -23,23 +22,21 @@ keyboard = {
     ]
 }
 
-# Construct the API request payload
 payload = {
     "chat_id": CHAT_ID,
     "text": message_text,
-    "parse_mode": "HTML", # Allows <b>, <i>, and <a> tags in text
+    "parse_mode": "HTML",
     "reply_markup": json.dumps(keyboard)
 }
 
-# Convert payload to bytes
-data = json.dumps(payload).encode('utf-8')
+data = json.dumps(payload).encode("utf-8")
+url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-# Send the request using standard library (no external pip dependencies needed)
-url = f"https://telegram.org{BOT_TOKEN}/sendMessage"
 req = urllib.request.Request(
-    url, 
-    data=data, 
-    headers={'Content-Type': 'application/json'}
+    url,
+    data=data,
+    headers={"Content-Type": "application/json"},
+    method="POST"
 )
 
 try:
