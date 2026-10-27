@@ -8,7 +8,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "-1004415135551"
 SITE_URL = "https://steemstreamer.pages.dev"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "bot_posts.json")
-MESSAGE_TTL_SECONDS = 600
+MESSAGE_TTL_SECONDS = 600  # 10 minutes
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
@@ -45,12 +45,13 @@ def telegram_request(method, payload):
 
 def delete_old_bot_posts():
     now = int(time.time())
-    tracked = load_state()
+    state = load_state()
     remaining = []
 
-    for item in tracked:
+    for item in state:
         message_id = item.get("message_id")
         timestamp = item.get("timestamp")
+
         if message_id is None or timestamp is None:
             continue
 
@@ -58,7 +59,7 @@ def delete_old_bot_posts():
             try:
                 result = telegram_request(
                     "deleteMessage",
-                    {"chat_id": CHAT_ID, "message_id": int(message_id)}
+                    {"chat_id": CHAT_ID, "message_id": int(message_id)},
                 )
                 if result.get("ok"):
                     print(f"Deleted bot post {message_id}")
@@ -92,7 +93,7 @@ POST_LIBRARY = [
     "<b>Fresh Content Alert ⚡</b>\n\nWe’ve just uploaded a new batch of material. Explore the latest features and updates today.",
     "<b>Latest Upload 📦</b>\n\nThe newest content is live and ready to view. Find out what’s new and take a look now.",
     "<b>Platform Updated 💫</b>\n\nFresh content has just gone live. Head over and discover what our latest release has to offer.",
-    "<b>New Release 🎯</b>\n\nAn updated batch of content is now available. Check it out and be the first to explore it."
+    "<b>New Release 🎯</b>\n\nAn updated batch of content is now available. Check it out and be the first to explore it.",
 ]
 
 
@@ -112,17 +113,17 @@ def send_new_post():
             "text": message_text,
             "parse_mode": "HTML",
             "reply_markup": json.dumps(keyboard),
-        }
+        },
     )
 
     if result.get("ok"):
         message_id = result["result"]["message_id"]
-        tracked = load_state()
-        tracked.append({"message_id": message_id, "timestamp": int(time.time())})
-        save_state(tracked)
-        print("Sent new post:", message_id)
+        state = load_state()
+        state.append({"message_id": message_id, "timestamp": int(time.time())})
+        save_state(state)
+        print(f"Sent new post {message_id}")
     else:
-        print("Send failed:", result)
+        print("Failed to send post:", result)
 
 
 def main():
