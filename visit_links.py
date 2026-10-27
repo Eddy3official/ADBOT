@@ -7,27 +7,25 @@ import urllib.request
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "-1004415135551"
 SITE_URL = "https://steemstreamer.pages.dev"
-STATE_FILE = os.path.join(os.path.dirname(__file__), "sent_messages.json")
+OFFSET_FILE = os.path.join(os.path.dirname(__file__), "telegram_offset.json")
 MESSAGE_TTL_SECONDS = 600
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
 
 
-def load_message_log():
+def read_json(path, default):
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, list):
-            return data
+            return data if data is not None else default
     except (FileNotFoundError, json.JSONDecodeError):
-        pass
-    return []
+        return default
 
 
-def save_message_log(records):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(records, f)
+def write_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
 
 
 def telegram_request(endpoint, payload):
@@ -40,37 +38,59 @@ def telegram_request(endpoint, payload):
         method="POST",
     )
     with urllib.request.urlopen(req) as response:
-        return json.loads(response.read().decode("utf-8"))
+        response_body = response.read().decode("utf-8")
+        return json.loads(response_body) if response_body else {}
 
 
-def delete_old_messages():
+def purge_old_group_messages():
     now = int(time.time())
-    records = load_message_log()
-    kept_records = []
+    offset = read_json(OFFSET_FILE, 0)
+    result = telegram_request(
+        "getUpdates",
+        {
+            "offset": int(offset),
+            "limit": 100,
+            "timeout": 5,
+            "allowed_updates": ["message"],
+        },
+    )
 
-    for record in records:
-        if record.get("chat_id") != CHAT_ID:
+    updates = result.get("result", [])
+    if not updates:
+        return
+
+    max_offset = int(offset)
+    for update in updates:
+        update_id = update.get("update_id")
+        if update_id is not None:
+            max_offset = max(max_offset, int(update_id) + 1)
+
+        message = update.get("message")
+        if not message:
             continue
 
-        message_id = record.get("message_id")
-        timestamp = record.get("timestamp")
-        if message_id is None or timestamp is None:
+        chat = message.get("chat") or {}
+        if str(chat.get("id")) != str(CHAT_ID):
             continue
 
-        age_seconds = now - int(timestamp)
-        if age_seconds > MESSAGE_TTL_SECONDS:
-            try:
-                telegram_request(
-                    "deleteMessage",
-                    {"chat_id": CHAT_ID, "message_id": int(message_id)},
-                )
-                print(f"Deleted old message {message_id} from chat {CHAT_ID}")
-            except Exception as exc:
-                print(f"Failed deleting old message {message_id}: {exc}")
-        else:
-            kept_records.append(record)
+        message_id = message.get("message_id")
+        message_date = message.get("date")
+        if message_id is None or message_date is None:
+            continue
 
-    save_message_log(kept_records)
+        if now - int(message_date) <= MESSAGE_TTL_SECONDS:
+            continue
+
+        try:
+            telegram_request(
+                "deleteMessage",
+                {"chat_id": CHAT_ID, "message_id": int(message_id)},
+            )
+            print(f"Deleted message {message_id} from chat {CHAT_ID}")
+        except Exception as exc:
+            print(f"Failed deleting message {message_id}: {exc}")
+
+    write_json(OFFSET_FILE, max_offset)
 
 
 POST_LIBRARY = [
@@ -178,7 +198,7 @@ POST_LIBRARY = [
 
 
 def main():
-    delete_old_messages()
+    purge_old_group_messages()
 
     message_text = random.choice(POST_LIBRARY)
     keyboard = {
@@ -196,22 +216,11 @@ def main():
         "reply_markup": json.dumps(keyboard),
     }
 
-    response = telegram_request("sendMessage", payload)
-    result = response.get("result", {})
-    message_id = result.get("message_id")
-    if message_id:
-        records = load_message_log()
-        records.append({
-            "chat_id": CHAT_ID,
-            "message_id": int(message_id),
-            "timestamp": int(time.time()),
-        })
-        if len(records) > 100:
-            records = records[-100:]
-        save_message_log(records)
-        print(f"Sent message ID {message_id}")
+    result = telegram_request("sendMessage", payload)
+    if result.get("ok"):
+        print("Message sent successfully")
     else:
-        print("No message ID returned by Telegram:", response)
+        print("Telegram send failed:", result)
 
 
 if __name__ == "__main__":
