@@ -8,29 +8,29 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = "-1004415135551"
 SITE_URL = "https://steemstreamer.pages.dev"
 OFFSET_FILE = os.path.join(os.path.dirname(__file__), "telegram_offset.json")
-MESSAGE_TTL_SECONDS = 600
+MESSAGE_TTL_SECONDS = 60  # 1 minute
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
 
 
-def read_json(path, default):
+def read_offset():
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(OFFSET_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if data is not None else default
-    except (FileNotFoundError, json.JSONDecodeError):
-        return default
+            return int(data) if isinstance(data, (int, str)) else 0
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        return 0
 
 
-def write_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+def write_offset(value):
+    with open(OFFSET_FILE, "w", encoding="utf-8") as f:
+        json.dump(int(value), f)
 
 
-def telegram_request(endpoint, payload):
+def telegram_request(method, payload):
     data = json.dumps(payload).encode("utf-8")
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{endpoint}"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     req = urllib.request.Request(
         url,
         data=data,
@@ -38,32 +38,37 @@ def telegram_request(endpoint, payload):
         method="POST",
     )
     with urllib.request.urlopen(req) as response:
-        response_body = response.read().decode("utf-8")
-        return json.loads(response_body) if response_body else {}
+        return json.loads(response.read().decode("utf-8"))
 
 
 def purge_old_group_messages():
     now = int(time.time())
-    offset = read_json(OFFSET_FILE, 0)
-    result = telegram_request(
+    offset = read_offset()
+
+    response = telegram_request(
         "getUpdates",
         {
-            "offset": int(offset),
+            "offset": offset,
             "limit": 100,
             "timeout": 5,
             "allowed_updates": ["message"],
         },
     )
 
-    updates = result.get("result", [])
+    if not response.get("ok"):
+        print("Failed to get Telegram updates:", response)
+        return
+
+    updates = response.get("result", [])
     if not updates:
         return
 
-    max_offset = int(offset)
+    next_offset = offset
+
     for update in updates:
         update_id = update.get("update_id")
         if update_id is not None:
-            max_offset = max(max_offset, int(update_id) + 1)
+            next_offset = max(next_offset, int(update_id) + 1)
 
         message = update.get("message")
         if not message:
@@ -75,22 +80,31 @@ def purge_old_group_messages():
 
         message_id = message.get("message_id")
         message_date = message.get("date")
+
         if message_id is None or message_date is None:
             continue
 
-        if now - int(message_date) <= MESSAGE_TTL_SECONDS:
+        age_seconds = now - int(message_date)
+
+        if age_seconds <= MESSAGE_TTL_SECONDS:
             continue
 
         try:
-            telegram_request(
+            result = telegram_request(
                 "deleteMessage",
-                {"chat_id": CHAT_ID, "message_id": int(message_id)},
+                {
+                    "chat_id": CHAT_ID,
+                    "message_id": int(message_id),
+                },
             )
-            print(f"Deleted message {message_id} from chat {CHAT_ID}")
+            if result.get("ok"):
+                print(f"Deleted old message {message_id}")
+            else:
+                print(f"Could not delete message {message_id}: {result}")
         except Exception as exc:
-            print(f"Failed deleting message {message_id}: {exc}")
+            print(f"Error deleting message {message_id}: {exc}")
 
-    write_json(OFFSET_FILE, max_offset)
+    write_offset(next_offset)
 
 
 POST_LIBRARY = [
@@ -197,30 +211,34 @@ POST_LIBRARY = [
 ]
 
 
-def main():
-    purge_old_group_messages()
-
+def send_new_post():
     message_text = random.choice(POST_LIBRARY)
+
     keyboard = {
         "inline_keyboard": [
-            [
-                {"text": "🌐 Visit Website", "url": SITE_URL}
-            ]
+            [{"text": "🌐 Visit Website", "url": SITE_URL}]
         ]
     }
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message_text,
-        "parse_mode": "HTML",
-        "reply_markup": json.dumps(keyboard),
-    }
+    result = telegram_request(
+        "sendMessage",
+        {
+            "chat_id": CHAT_ID,
+            "text": message_text,
+            "parse_mode": "HTML",
+            "reply_markup": json.dumps(keyboard),
+        },
+    )
 
-    result = telegram_request("sendMessage", payload)
     if result.get("ok"):
-        print("Message sent successfully")
+        print("New post sent successfully.")
     else:
-        print("Telegram send failed:", result)
+        print("Failed to send post:", result)
+
+
+def main():
+    purge_old_group_messages()
+    send_new_post()
 
 
 if __name__ == "__main__":
