@@ -1,45 +1,68 @@
 import json
 import os
-import random
 import time
 import urllib.request
+from datetime import datetime, timezone
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-CHAT_ID = "-1004415135551"
-SITE_URL = "https://steemstreamer.pages.dev"
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1004415135551")
+SITE_URL = "https://shorturl.at/zNI0m"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "bot_posts.json")
-MESSAGE_TTL_SECONDS = 60  # 1 minute
+LAST_REPORT_FILE = os.path.join(os.path.dirname(__file__), "last_report.json")
+MESSAGE_TTL_SECONDS = 1800  # 30 minutes
+REPORT_COOLDOWN_SECONDS = 300  # 5 minutes
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
 
 
-def load_state():
+def utc_timestamp():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def load_json(path, default):
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if isinstance(data, list):
-                return data
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            return data if data is not None else default
     except (FileNotFoundError, json.JSONDecodeError):
-        pass
+        return default
+
+
+def save_json(path, payload):
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2)
+
+
+def load_state():
+    data = load_json(STATE_FILE, [])
+    if isinstance(data, list):
+        return data
     return []
 
 
 def save_state(items):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(items, f)
+    save_json(STATE_FILE, items)
+
+
+def load_last_report():
+    return load_json(LAST_REPORT_FILE, {})
+
+
+def save_last_report(data):
+    save_json(LAST_REPORT_FILE, data)
 
 
 def telegram_request(method, payload):
     data = json.dumps(payload).encode("utf-8")
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-    req = urllib.request.Request(
+    request = urllib.request.Request(
         url,
         data=data,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(request, timeout=20) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -73,141 +96,160 @@ def delete_old_bot_posts():
     save_state(remaining)
 
 
-POST_LIBRARY = [
-    "Ava added a new photo.",
-    "Leo uploaded a video.",
-    "Mia posted a new image.",
-    "Noah shared a video clip.",
-    "Emma added another photo.",
-    "Lucas uploaded a fresh video.",
-    "Sofia posted a new picture.",
-    "Mason shared a short video.",
-    "Harper added a new image.",
-    "James uploaded a photo.",
-    "Ella posted a new video.",
-    "Benjamin shared a fresh picture.",
-    "Amelia added a new video.",
-    "Henry uploaded a photo.",
-    "Grace posted a new image.",
-    "Alexander shared a video.",
-    "Charlotte added another photo.",
-    "Daniel uploaded a new video.",
-    "Scarlett posted a picture.",
-    "Jack shared a short video.",
-    "Luna added a new photo.",
-    "Owen uploaded a fresh video.",
-    "Chloe posted a new image.",
-    "Gabriel shared a video clip.",
-    "Aria added a new picture.",
-    "Wyatt uploaded a photo.",
-    "Nora posted a new video.",
-    "Julian shared a fresh photo.",
-    "Zoe added a new image.",
-    "Nathan uploaded a video.",
-    "Layla posted a new picture.",
-    "Isaac shared a fresh video.",
-    "Madison added a new photo.",
-    "Hudson uploaded a video clip.",
-    "Penelope posted a new image.",
-    "Eli shared a video.",
-    "Stella added a picture.",
-    "Leo uploaded another video.",
-    "Aurora posted a new photo.",
-    "Ryan shared a fresh image.",
-    "Hazel added a new video.",
-    "David uploaded a picture.",
-    "Violet posted a new clip.",
-    "Samuel shared a video.",
-    "Ruby added a photo.",
-    "Joseph uploaded a new video.",
-    "Claire posted a fresh image.",
-    "Carter shared a video.",
-    "Natalie added a new picture.",
-    "Julian uploaded a photo.",
-    "Bella posted a new video.",
-    "Adrian shared a fresh image.",
-    "Lily added a new video.",
-    "Ethan uploaded a picture.",
-    "Mila posted a new clip.",
-    "Leo shared a video.",
-    "Eva added a new photo.",
-    "Miles uploaded a fresh video.",
-    "Naomi posted a new image.",
-    "Theo shared a video clip.",
-    "Samantha added a new photo.",
-    "Isaiah uploaded a video.",
-    "Hannah posted a new picture.",
-    "Oliver shared a fresh image.",
-    "Aubrey added a new video.",
-    "Caleb uploaded a photo.",
-    "Sadie posted a new clip.",
-    "Aaron shared a video.",
-    "Paisley added a new picture.",
-    "Elijah uploaded a fresh video.",
-    "Piper posted a new image.",
-    "Jonathan shared a short video.",
-    "Lucy added a new photo.",
-    "Christian uploaded a video.",
-    "Addison posted a new picture.",
-    "Anthony shared a fresh clip.",
-    "Brooklyn added a new image.",
-    "Dylan uploaded a video.",
-    "Savannah posted a new photo.",
-    "Joshua shared a fresh video.",
-    "Aria added another image.",
-    "Sebastian uploaded a new video.",
-    "Genesis posted a picture.",
-    "Nicholas shared a fresh photo.",
-    "Aurora added a new clip.",
-    "Wyatt uploaded a photo.",
-    "Stella posted a new video.",
-    "Kai shared a fresh picture.",
-    "Delilah added a new image.",
-    "Mateo uploaded a video.",
-    "Valentina posted a new photo.",
-    "Colton shared a fresh video.",
-    "Riley added a new picture.",
-    "Asher uploaded a video clip.",
-    "Ivy posted a new image.",
-    "Julian shared a fresh photo.",
-    "Freya added a new video.",
-    "Henry uploaded a picture.",
-    "Cora posted a new clip.",
-    "Nathaniel shared a video.",
-    "Lila added a new photo.",
-    "Leo uploaded a fresh video.",
-    "Maya posted a new image.",
-    "Roman shared a video clip.",
-    "Elena added a new photo.",
-    "Victor uploaded a picture.",
-    "Sophie posted a new video.",
-    "Evan shared a fresh image.",
-    "Ava added a new photo.",
-    "Liam uploaded a video.",
-    "Ella posted a new image.",
-    "Mason shared a clip.",
-    "Hannah added a new photo.",
-    "Noah uploaded a video.",
-    "Avery posted a new image.",
-    "Jack shared a fresh video.",
-    "Mila added a photo.",
-    "Leo uploaded another video.",
-    "Riley posted a new picture.",
-    "Luca shared a video clip.",
-    "Ariana added a new image.",
-    "Daniel uploaded a photo.",
-    "Chloe posted a new video.",
-    "Nathan shared a fresh picture.",
-    "Harper added a new clip.",
-]
+def format_price(value):
+    return f"${value:,.2f}"
 
 
-def send_new_post():
-    message_text = random.choice(POST_LIBRARY)
+def format_change(value):
+    return f"{value:+.2f}%"
+
+
+def trend_label(change_value):
+    if change_value > 2.0:
+        return "Strong Bullish"
+    if change_value > 0.0:
+        return "Bullish"
+    if change_value < -2.0:
+        return "Strong Bearish"
+    if change_value < 0.0:
+        return "Bearish"
+    return "Neutral"
+
+
+def fetch_market_data():
+    ids = "bitcoin,xaut,tether-gold"
+    url = (
+        "https://api.coingecko.com/api/v3/simple/price"
+        f"?ids={ids}&vs_currencies=usd&include_24hr_change=true"
+    )
+
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Market API request failed: {exc}") from exc
+
+    btc_data = payload.get("bitcoin")
+    xaut_data = payload.get("xaut") or payload.get("tether-gold")
+
+    if btc_data is None or xaut_data is None:
+        raise RuntimeError(f"Market data unavailable: {payload}")
+
+    btc_price = float(btc_data.get("usd", 0.0))
+    btc_change = float(btc_data.get("usd_24h_change", 0.0))
+
+    xaut_price = float(xaut_data.get("usd", 0.0))
+    xaut_change = float(xaut_data.get("usd_24h_change", 0.0))
+
+    return {
+        "btc": {
+            "price": btc_price,
+            "change": btc_change,
+        },
+        "xaut": {
+            "price": xaut_price,
+            "change": xaut_change,
+        },
+    }
+
+
+def build_message(payload, template_index):
+    btc = payload["btc"]
+    xaut = payload["xaut"]
+
+    btc_price = format_price(btc["price"])
+    btc_change = format_change(btc["change"])
+    btc_trend = trend_label(btc["change"])
+
+    xaut_price = format_price(xaut["price"])
+    xaut_change = format_change(xaut["change"])
+    xaut_trend = trend_label(xaut["change"])
+
+    templates = [
+        (
+            "XAUT / BTC market update\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT is trading at {xaut_price}, {xaut_change} over the last 24 hours.\n"
+            f"BTC is trading at {btc_price}, {btc_change} over the last 24 hours.\n\n"
+            f"XAUT trend: {xaut_trend}\n"
+            f"BTC trend: {btc_trend}\n\n"
+            "The market tone remains constructive, with momentum continuing to hold across both assets.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+        (
+            "Market report: XAUT and BTC\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT: {xaut_price} | {xaut_change} | {xaut_trend}\n"
+            f"BTC: {btc_price} | {btc_change} | {btc_trend}\n\n"
+            "Momentum remains active, with BTC leading the pace and XAUT holding a steady range.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+        (
+            "XAUT and BTC update\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT is priced at {xaut_price} and is {xaut_change} in the last 24 hours.\n"
+            f"BTC is priced at {btc_price} and is {btc_change} in the last 24 hours.\n\n"
+            "The current setup remains supportive, with continued participation across both markets.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+        (
+            "Session check: XAUT and BTC\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT: {xaut_price} | {xaut_change} | {xaut_trend}\n"
+            f"BTC: {btc_price} | {btc_change} | {btc_trend}\n\n"
+            "Price action remains steady and the broader tone continues to favor active trading.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+        (
+            "Market snapshot\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT: {xaut_price}\n"
+            f"24h change: {xaut_change}\n"
+            f"Trend: {xaut_trend}\n\n"
+            f"BTC: {btc_price}\n"
+            f"24h change: {btc_change}\n"
+            f"Trend: {btc_trend}\n\n"
+            "The market remains in a constructive phase with both assets holding positive momentum.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+        (
+            "XAUT / BTC brief\n"
+            f"Updated: {utc_timestamp()}\n\n"
+            f"XAUT is trading at {xaut_price}, up {xaut_change} over the last 24 hours.\n"
+            f"BTC is trading at {btc_price}, up {btc_change} over the last 24 hours.\n\n"
+            "The trend remains supportive, with strength continuing to show in the broader crypto and metals-linked space.\n"
+            f"Trade link: {SITE_URL}"
+        ),
+    ]
+
+    return templates[template_index % len(templates)]
+
+
+def should_send_new_report(data):
+    last_report = load_last_report()
+    if not last_report:
+        return True
+
+    try:
+        last_sent = float(last_report.get("timestamp", 0))
+    except (TypeError, ValueError):
+        return True
+
+    return (time.time() - last_sent) >= REPORT_COOLDOWN_SECONDS
+
+
+def send_new_report():
+    if not should_send_new_report({}):
+        print("Skipping duplicate market report within cooldown window.")
+        return
+
+    market_data = fetch_market_data()
+    template_index = int(time.time() // 600)  # rotates on a 10-minute cycle
+    message_text = build_message(market_data, template_index)
 
     keyboard = {
         "inline_keyboard": [
-            [{"text": "Visit Website", "url": SITE_URL}]
+            [{"text": "Trade Now", "url": SITE_URL}]
         ]
     }
 
@@ -217,6 +259,7 @@ def send_new_post():
             "chat_id": CHAT_ID,
             "text": message_text,
             "parse_mode": "HTML",
+            "disable_web_page_preview": True,
             "reply_markup": json.dumps(keyboard),
         },
     )
@@ -226,14 +269,16 @@ def send_new_post():
         state = load_state()
         state.append({"message_id": message_id, "timestamp": int(time.time())})
         save_state(state)
-        print(f"Sent new post {message_id}")
+
+        save_last_report({"timestamp": time.time(), "message_id": message_id})
+        print(f"Sent market report {message_id}")
     else:
-        print("Failed to send post:", result)
+        print("Failed to send market report:", result)
 
 
 def main():
     delete_old_bot_posts()
-    send_new_post()
+    send_new_report()
 
 
 if __name__ == "__main__":
